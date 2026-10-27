@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.neoguard_backend.pid
+*.log
+.env
+.DS_Store
