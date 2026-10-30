@@ -56,10 +56,15 @@ bool fanOn = false;
 Preferences prefs;
 
 // ---------------- MPU SETTINGS ----------------
-const float MOTION_THRESHOLD = 1.2;
-const float VIBRATION_THRESHOLD = 0.45;
-const int MPU_SAMPLES = 20;
-const int MPU_SAMPLE_DELAY = 20;
+// Continuous 100 Hz sampling. Vibration is measured as acceleration that
+// changes faster than the gravity baseline, rather than max/min total
+// acceleration across a short batch (which often misses brief vibrations).
+const float MOTION_THRESHOLD = 1.2;       // m/s^2 from gravity magnitude
+const float VIBRATION_THRESHOLD = 0.35;   // m/s^2 dynamic acceleration peak
+const float GRAVITY_BASELINE_ALPHA = 0.02; // slow baseline follows orientation
+const unsigned long MPU_SAMPLE_INTERVAL = 10; // 100 Hz
+const unsigned long MOTION_HOLD_MS = 1000;
+const unsigned long VIBRATION_HOLD_MS = 3500; // spans at least one 2.5 s upload
 
 // ---------------- TIMING ----------------
 const unsigned long SEND_INTERVAL = 2500;
@@ -83,6 +88,13 @@ unsigned long lastWifiAttempt = 0;
 DHT dht(DHT_PIN, DHT_TYPE);
 Adafruit_MPU6050 mpu;
 bool mpuAvailable = false;
+float gravityX = 0.0f, gravityY = 0.0f, gravityZ = 0.0f;
+bool gravityBaselineReady = false;
+unsigned long lastMPUSample = 0;
+unsigned long motionDetectedUntil = 0;
+unsigned long vibrationDetectedUntil = 0;
+int latestMotionState = 0;
+int latestVibrationState = 0;
 
 // =====================================================
 // WIFI (non-blocking retries so safety logic never stalls)
@@ -135,38 +147,72 @@ void initializeMPU() {
     Serial.println("MPU6050 detected.");
     mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+    // Wider bandwidth preserves more of the vibration signal.
+    mpu.setFilterBandwidth(MPU6050_BAND_44_HZ);
+    gravityBaselineReady = false;
+    lastMPUSample = 0;
   } else {
     mpuAvailable = false;
     Serial.println("MPU6050 NOT detected.");
   }
 }
 
-void readMPU(int &motion, int &vibration) {
-  motion = 0;
-  vibration = 0;
-  if (!mpuAvailable) return;
+void updateMPUContinuous() {
+  if (!mpuAvailable) {
+    latestMotionState = 0;
+    latestVibrationState = 0;
+    return;
+  }
+
+  const unsigned long now = millis();
+  if (now - lastMPUSample < MPU_SAMPLE_INTERVAL) {
+    latestMotionState = (now < motionDetectedUntil) ? 1 : 0;
+    latestVibrationState = (now < vibrationDetectedUntil) ? 1 : 0;
+    return;
+  }
+  lastMPUSample = now;
 
   sensors_event_t a, g, temp;
-  float minMag = 1000.0, maxMag = -1000.0;
+  mpu.getEvent(&a, &g, &temp);
 
-  for (int i = 0; i < MPU_SAMPLES; i++) {
-    mpu.getEvent(&a, &g, &temp);
-    float mag = sqrt(a.acceleration.x * a.acceleration.x +
-                     a.acceleration.y * a.acceleration.y +
-                     a.acceleration.z * a.acceleration.z);
-    if (mag < minMag) minMag = mag;
-    if (mag > maxMag) maxMag = mag;
-    if (fabs(mag - 9.81) > MOTION_THRESHOLD) motion = 1;
-    delay(MPU_SAMPLE_DELAY);
+  const float ax = a.acceleration.x;
+  const float ay = a.acceleration.y;
+  const float az = a.acceleration.z;
+
+  // Establish the gravity vector before looking for dynamic acceleration.
+  if (!gravityBaselineReady) {
+    gravityX = ax;
+    gravityY = ay;
+    gravityZ = az;
+    gravityBaselineReady = true;
+    return;
   }
-  if ((maxMag - minMag) > VIBRATION_THRESHOLD) vibration = 1;
 
-  Serial.print("MPU Motion: ");
-  Serial.println(motion ? "DETECTED" : "NONE");
-  Serial.print("MPU Vibration: ");
-  Serial.println(vibration ? "DETECTED" : "NONE");
+  // Difference from the slowly-following gravity/orientation baseline is the
+  // high-frequency component. This is much more useful for vibration than
+  // comparing only the total acceleration magnitude's min/max values.
+  const float dx = ax - gravityX;
+  const float dy = ay - gravityY;
+  const float dz = az - gravityZ;
+  const float dynamicAcceleration = sqrt(dx * dx + dy * dy + dz * dz);
+  const float totalMagnitude = sqrt(ax * ax + ay * ay + az * az);
+
+  if (fabs(totalMagnitude - 9.81f) > MOTION_THRESHOLD) {
+    motionDetectedUntil = now + MOTION_HOLD_MS;
+  }
+  if (dynamicAcceleration >= VIBRATION_THRESHOLD) {
+    vibrationDetectedUntil = now + VIBRATION_HOLD_MS;
+  }
+
+  // Update baseline after measuring the current dynamic component.
+  gravityX += GRAVITY_BASELINE_ALPHA * dx;
+  gravityY += GRAVITY_BASELINE_ALPHA * dy;
+  gravityZ += GRAVITY_BASELINE_ALPHA * dz;
+
+  latestMotionState = (now < motionDetectedUntil) ? 1 : 0;
+  latestVibrationState = (now < vibrationDetectedUntil) ? 1 : 0;
 }
+
 
 // =====================================================
 // LOCAL SAFETY: fever -> LED + buzzer
@@ -238,7 +284,7 @@ bool sendSensorData(float ambientTemperature, float humidity,
   json += ",\"DHT_TEMP\":" + String(ambientTemperature, 2);
   json += ",\"DHT11\":" + String(humidity, 2);
   json += ",\"ITG_MPU\":" + String(motion);
-  json += ",\"SW420\":" + String(vibration);
+  json += ",\"MPU_VIBRATION\":" + String(vibration);
   json += ",\"FEVER\":" + String(fever ? 1 : 0);
   json += ",\"FAN\":" + String(fanOn ? 1 : 0);
   json += "}";
@@ -316,6 +362,11 @@ void loop() {
 
   ensureWiFi();
 
+  // Keep sampling the MPU6050 continuously, including between cloud uploads.
+  // This prevents short vibration events from being missed by the 2.5 s
+  // sensor-upload interval.
+  updateMPUContinuous();
+
   // Send on schedule, and IMMEDIATELY when the fever state changes so the
   // dashboard LED / buzzer / emergency cards switch together with the hardware.
   if ((now - lastSendTime >= SEND_INTERVAL) || (fever != lastReportedFever)) {
@@ -341,8 +392,12 @@ void loop() {
       // Fan decision happens locally, BEFORE any network call.
       updateFan(ambientTemperature);
 
-      int motion = 0, vibration = 0;
-      readMPU(motion, vibration);
+      const int motion = latestMotionState;
+      const int vibration = latestVibrationState;
+      Serial.print("MPU Motion: ");
+      Serial.println(motion ? "DETECTED" : "NONE");
+      Serial.print("MPU Vibration: ");
+      Serial.println(vibration ? "DETECTED" : "NONE");
 
       Serial.println("\n--------------------------------");
       Serial.print("Ambient temperature: ");

@@ -81,7 +81,3 @@ The dashboard can operate without an external AI key using its local fallback. I
 ## Project scope
 
 The overview reports monitoring status and configured sensor checks; it does not assign a medical stability percentage. The NTC module's digital alert is not a measured body temperature. The digital twin is a visual representation driven by reported sensor values. It is not a validated physical simulation, and browser notifications may require permission and a user gesture to enable audio.
-
-## Deploy as a website (Render)
-
-This repo includes a `render.yaml` blueprint. On [Render](https://render.com): **New → Blueprint → select this repo**. The app starts with `gunicorn app:app`. Optionally add `GROQ_API_KEY` in the Render dashboard for AI Copilot. Note: on Render's free plan the SQLite file resets on redeploy/restart.

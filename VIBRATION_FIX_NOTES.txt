@@ -1,0 +1,21 @@
+NEOGUARD MPU6050 VIBRATION DASHBOARD FIX
+
+Canonical vibration sensor field: MPU_VIBRATION (from the MPU6050).
+
+Changes in this package
+- Flask /api/sensor-data reads MPU_VIBRATION first, with VIBRATION as a secondary
+  alias and SW420 accepted only as a legacy input for older firmware.
+- New readings are stored under MPU_VIBRATION, not SW420.
+- The /api/state dashboard model recognizes MPU_VIBRATION and legacy records.
+- Reports include MPU_VIBRATION and older stored SW420 records.
+- Dashboard sensor labels identify vibration as MPU6050.
+- The included ESP32 sketch sends MPU_VIBRATION.
+
+Important deployment note
+Render must deploy this project from the repository root that contains app.py,
+requirements.txt, and web/. After deployment, verify POST /api/sensor-data with
+MPU_VIBRATION: 1 and inspect GET /api/state for sensors.vibration: true.
+
+Legacy compatibility
+Old database rows named SW420 remain readable in history/state. New readings are
+written using MPU_VIBRATION. No separate SW-420 module is required.

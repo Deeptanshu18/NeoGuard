@@ -229,7 +229,7 @@ class AICareEngine:
         if "what is neoguard" in q or "what does neoguard do" in q:
             return "NeoGuard is a smart neonatal monitoring prototype. It uses sensors such as temperature, humidity, movement and vibration, then applies alerts, control logic and data structures to help monitor the station."
         if "what sensors" in q or "which sensors" in q:
-            return "The current prototype uses an NTC thermistor for temperature, DHT11/DHT22 for ambient humidity, an MPU/MPU6050-type motion sensor for movement, and an SW420 vibration sensor."
+            return "The current prototype uses an NTC thermistor for temperature, DHT11/DHT22 for ambient humidity, an MPU/MPU6050-type motion sensor for movement, and the MPU6050 accelerometer/gyroscope for vibration detection."
         if "how is my baby" in q or "how is baby" in q or "is my baby okay" in q or "is the baby okay" in q or "baby okay" in q:
             if a["condition"] == "STABLE":
                 return f"Based on the NeoGuard sensors, the current station state is STABLE. Temperature is {t:.1f} °C and humidity is {h:.0f}% if available. Movement is {'detected' if movement else 'not detected'}, and vibration is {'detected' if vibration else 'not detected'}. This is a sensor status, not a medical diagnosis."

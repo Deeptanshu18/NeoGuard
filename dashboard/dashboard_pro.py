@@ -982,7 +982,7 @@ class NeoGuardPRO:
                     d["fever"] = value == 1
                 elif name in {"ITG_MPU", "MPU6050", "MOVEMENT"}:
                     d["movement"] = value != 0
-                elif name in {"SW420", "VIBRATION", "MPU_VIBRATION"}:
+                elif name in {"MPU_VIBRATION", "VIBRATION", "SW420"}:
                     d["vibration"] = value != 0
 
             d["emergency"] = d["fever"]

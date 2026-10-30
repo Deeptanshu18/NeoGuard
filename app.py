@@ -162,21 +162,21 @@ def sensor_data():
         ambient = float(payload["DHT_TEMP"])
         humidity = float(payload["DHT11"])
         movement = int(payload.get("ITG_MPU", 0))
-        vibration = int(payload.get("SW420", 0))
+        vibration = int(payload.get("MPU_VIBRATION", payload.get("VIBRATION", payload.get("SW420", 0))))
         fever = int(payload.get("FEVER", 0))
         fan_reported = payload.get("FAN")
         fan_reported = None if fan_reported is None else int(fan_reported)
     except (KeyError, TypeError, ValueError):
         return jsonify({
             "ok": False,
-            "error": "Expected DHT_TEMP, DHT11, ITG_MPU, SW420 and FEVER"
+            "error": "Expected DHT_TEMP, DHT11, ITG_MPU, MPU_VIBRATION (or VIBRATION) and FEVER"
         }), 400
 
     # Final hardware semantics. NTC numeric field is deliberately ignored.
     insert_reading("DHT_TEMP", ambient, "°C")
     insert_reading("DHT11", humidity, "%")
     insert_reading("ITG_MPU", movement, "STATE")
-    insert_reading("SW420", vibration, "STATE")
+    insert_reading("MPU_VIBRATION", vibration, "STATE")
     insert_reading("FEVER", fever, "STATE")
 
     # ------------------ Alerts (limits configurable from Settings) ------------------
@@ -200,8 +200,8 @@ def sensor_data():
         insert_event("ITG_MPU", "Movement detected")
 
     if vibration:
-        insert_alert("WARNING", "MPU6050 vibration detected")
-        insert_event("SW420", "Vibration detected")
+        insert_alert("WARNING", "MPU6050 vibration detected (dynamic acceleration)")
+        insert_event("MPU_VIBRATION", "Vibration detected by MPU6050")
 
     # ------------------ Physical actuator mirror ------------------
     # ESP32 is the physical source of truth. The server mirrors FEVER so the
@@ -242,7 +242,8 @@ def sensor_data():
             "DHT_TEMP": ambient,
             "DHT11": humidity,
             "ITG_MPU": movement,
-            "SW420": vibration,
+            "MPU_VIBRATION": vibration,
+            "VIBRATION": vibration,
             "FEVER": fever,
         },
         "actuators": {
@@ -329,7 +330,7 @@ def api_care_log():
     return jsonify(rows)
 
 SENSOR_LABELS = {'DHT_TEMP': 'Room temperature (DHT22)', 'DHT11': 'Humidity (DHT22)',
-                 'ITG_MPU': 'Movement (MPU6050)', 'SW420': 'Vibration (MPU6050)', 'FEVER': 'NTC alert signal'}
+                 'ITG_MPU': 'Movement (MPU6050)', 'MPU_VIBRATION': 'Vibration (MPU6050)', 'FEVER': 'NTC alert signal'}
 def sensor_label(n): return SENSOR_LABELS.get(n, n)
 
 RANGE_HOURS = {'hour': 1, 'day': 24, 'week': 24*7, 'month': 24*30, 'year': 24*365, 'all': None}
@@ -425,7 +426,7 @@ def build_report(period):
         AVG(CASE WHEN sensor_name='DHT_TEMP' THEN value END) AS temp,
         AVG(CASE WHEN sensor_name='DHT11' THEN value END) AS hum,
         MAX(CASE WHEN sensor_name='ITG_MPU' THEN value END) AS mov,
-        MAX(CASE WHEN sensor_name='SW420' THEN value END) AS vib,
+        MAX(CASE WHEN sensor_name IN ('MPU_VIBRATION','VIBRATION','SW420') THEN value END) AS vib,
         MAX(CASE WHEN sensor_name='FEVER' THEN value END) AS fev
         FROM sensor_readings WHERE valid=1 AND timestamp >= ? GROUP BY b ORDER BY b""",
         (size, start.strftime('%Y-%m-%d %H:%M:%S')))
@@ -618,7 +619,7 @@ TEMP_NAMES = ("DHT_TEMP", "DHT22_TEMP", "DHT22_TEMPERATURE", "AMBIENT_TEMPERATUR
 HUM_NAMES = ("DHT11", "DHT22", "DHT22_HUMIDITY", "HUMIDITY")
 FEVER_NAMES = ("FEVER", "NTC_FEVER", "BABY_FEVER")
 MOVE_NAMES = ("ITG_MPU", "MPU6050", "MOVEMENT")
-VIB_NAMES = ("SW420", "VIBRATION", "MPU_VIBRATION")
+VIB_NAMES = ("MPU_VIBRATION", "VIBRATION", "SW420")  # SW420 only for legacy database rows
 
 
 def classify(d):
@@ -828,4 +829,4 @@ def sessions():
 
 if __name__ == "__main__":
     print("NeoGuard backend running on http://0.0.0.0:5001")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)), debug=False)
+    app.run(host="0.0.0.0", port=5001, debug=False)

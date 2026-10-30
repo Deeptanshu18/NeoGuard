@@ -632,7 +632,7 @@ $("#previewPill").onclick=()=>{preview=null; poll();};
 let settingsCache=null, lastFeverState=null, historyLoaded=false, careLoaded=false;
 async function loadSettings(){try{settingsCache=await (await fetch('/api/settings')).json();}catch(e){settingsCache={};}}
 let histSeq=0;
-const SENSOR_LABELS={DHT_TEMP:'Room temperature (DHT22)',DHT11:'Humidity (DHT22)',ITG_MPU:'Movement (MPU6050)',SW420:'Vibration (MPU6050)',FEVER:'NTC alert signal'};
+const SENSOR_LABELS={DHT_TEMP:'Room temperature (DHT22)',DHT11:'Humidity (DHT22)',ITG_MPU:'Movement (MPU6050)',MPU_VIBRATION:'Vibration (MPU6050)',FEVER:'NTC alert signal'};
 function histFmt(range){
   if(range==="hour"||range==="day") return d=>d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   if(range==="week") return d=>d.toLocaleDateString([], {weekday:"short",day:"numeric"});
