@@ -1,0 +1,28 @@
+NEOGUARD MPU6050 VIBRATION FIX
+
+What changed
+- The MPU6050 is now sampled continuously at approximately 100 Hz in the main loop,
+  rather than taking a short batch only once every 2.5-second upload cycle.
+- Vibration is detected from dynamic acceleration relative to a slowly-following
+  gravity/orientation baseline. This is more suitable than comparing only the
+  minimum and maximum total acceleration magnitude.
+- The accelerometer low-pass bandwidth is set to 44 Hz to preserve more vibration
+  content than the previous 21 Hz setting.
+- A detected vibration is held for 3.5 seconds so the next 2.5-second cloud upload
+  has time to report it. This is a display/reporting hold, not a claim that vibration
+  continues for the full hold duration.
+- The existing JSON key SW420 is intentionally retained for backend compatibility.
+  It carries the MPU6050-derived vibration state in this project; no SW-420 module
+  is required by this firmware.
+
+Initial tuning
+- Dynamic acceleration threshold: 0.35 m/s^2.
+- If the crib is too sensitive, raise it gradually to 0.50 or 0.70 m/s^2.
+- If gentle vibration is not detected, lower it cautiously to 0.25 m/s^2.
+- Test with the MPU6050 firmly mounted. Loose wiring or a loose sensor board can
+  create misleading readings.
+
+Important
+This is a prototype vibration detector and must not be treated as a medical,
+clinical, or infant-safety alarm. Validate it against known vibration levels and
+check the physical mounting before relying on its readings.
